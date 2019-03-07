@@ -58,6 +58,8 @@ class RlModel():
         loaded_model_json = json_file.read()
         json_file.close()
         self.__action_model = model_from_json(loaded_model_json)
+        self.__action_model.compile(optimizer=opt, loss='mean_squared_error')
+
         
         # If we are using pretrained weights for the conv layers, load them and verify the first layer.
         if (weights_path is not None and len(weights_path) > 0):
