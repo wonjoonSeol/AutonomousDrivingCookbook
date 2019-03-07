@@ -438,7 +438,8 @@ class DistributedAgent():
                     except OSError as e:
                         if e.errno != errno.EEXIST:
                             raise
-                            
+                
+                # Added part
                 if (self.__num_batches_run % 100 == 0):
                     file_name = os.path.join(checkpoint_dir,'{0}.json'.format(self.__num_batches_run)) 
                     with open(file_name, 'w') as f:
