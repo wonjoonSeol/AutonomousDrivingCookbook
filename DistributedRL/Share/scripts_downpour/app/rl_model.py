@@ -6,7 +6,7 @@ import os
 
 import tensorflow as tf
 from keras.preprocessing.image import ImageDataGenerator
-from keras.models import Sequential, Model, clone_model, load_model
+from keras.models import Sequential, Model, clone_model, load_model, model_from_json
 from keras.layers import Conv2D, MaxPooling2D, Dropout, Flatten, Dense, Lambda, Input, concatenate
 from keras.layers.normalization import BatchNormalization
 from keras.layers.advanced_activations import ELU
@@ -51,14 +51,13 @@ class RlModel():
 #
 #        opt = Adam()
 #        self.__action_model = Model(inputs=[pic_input], outputs=output)
+#        self.__action_model.compile(optimizer=opt, loss='mean_squared_error')
+#        self.__action_model.summary()
 
         json_file = open('saved_model.json', 'r')
         loaded_model_json = json_file.read()
         json_file.close()
         self.__action_model = model_from_json(loaded_model_json)
-        
-        self.__action_model.compile(optimizer=opt, loss='mean_squared_error')
-        self.__action_model.summary()
         
         # If we are using pretrained weights for the conv layers, load them and verify the first layer.
         if (weights_path is not None and len(weights_path) > 0):
