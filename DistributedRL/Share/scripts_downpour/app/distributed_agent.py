@@ -439,10 +439,11 @@ class DistributedAgent():
                         if e.errno != errno.EEXIST:
                             raise
                             
-                file_name = os.path.join(checkpoint_dir,'{0}.json'.format(self.__num_batches_run)) 
-                with open(file_name, 'w') as f:
-                    print('Checkpointing to {0}'.format(file_name))
-                    f.write(checkpoint_str)
+                if (self.__num_batches_run % 100 == 0):
+                    file_name = os.path.join(checkpoint_dir,'{0}.json'.format(self.__num_batches_run)) 
+                    with open(file_name, 'w') as f:
+                        print('Checkpointing to {0}'.format(file_name))
+                        f.write(checkpoint_str)
                 
                 self.__last_checkpoint_batch_count = self.__num_batches_run
                 
