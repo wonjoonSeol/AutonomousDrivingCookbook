@@ -33,34 +33,41 @@ class RlModel():
 
         #Define the model
         
-#        activation = 'relu'
-#        pic_input = Input(shape=(59,255,3))
-#        
-#        img_stack = Conv2D(16, (3, 3), name='convolution0', padding='same', activation=activation, trainable=train_conv_layers)(pic_input)
-#        img_stack = MaxPooling2D(pool_size=(2,2))(img_stack)
-#        img_stack = Conv2D(32, (3, 3), activation=activation, padding='same', name='convolution1', trainable=train_conv_layers)(img_stack)
-#        img_stack = MaxPooling2D(pool_size=(2, 2))(img_stack)
-#        img_stack = Conv2D(32, (3, 3), activation=activation, padding='same', name='convolution2', trainable=train_conv_layers)(img_stack)
-#        img_stack = MaxPooling2D(pool_size=(2, 2))(img_stack)
-#        img_stack = Flatten()(img_stack)
-#        img_stack = Dropout(0.2)(img_stack)
-#
-#        img_stack = Dense(128, name='rl_dense', kernel_initializer=random_normal(stddev=0.01))(img_stack)
-#        img_stack=Dropout(0.2)(img_stack)
-#        output = Dense(self.__nb_actions, name='rl_output', kernel_initializer=random_normal(stddev=0.01))(img_stack)
-#
-#        opt = Adam()
-#        self.__action_model = Model(inputs=[pic_input], outputs=output)
-#        self.__action_model.compile(optimizer=opt, loss='mean_squared_error')
-#        self.__action_model.summary()
+        activation = 'relu'
+        pic_input = Input(shape=(59,255,3))
+        
+        img_stack = Conv2D(16, (3, 3), name='convolution0', padding='same', activation=activation, trainable=train_conv_layers)(pic_input)
+        img_stack = MaxPooling2D(pool_size=(2,2))(img_stack)
+        img_stack = Conv2D(32, (3, 3), activation=activation, padding='same', name='convolution1', trainable=train_conv_layers)(img_stack)
+        img_stack = MaxPooling2D(pool_size=(2, 2))(img_stack)
+        img_stack = Conv2D(32, (3, 3), activation=activation, padding='same', name='convolution2', trainable=train_conv_layers)(img_stack)
+        img_stack = MaxPooling2D(pool_size=(2, 2))(img_stack)
+        img_stack = Flatten()(img_stack)
+        img_stack = Dropout(0.2)(img_stack)
+
+        img_stack = Dense(128, name='rl_dense', kernel_initializer=random_normal(stddev=0.01))(img_stack)
+        img_stack=Dropout(0.2)(img_stack)
+        output = Dense(self.__nb_actions, name='rl_output', kernel_initializer=random_normal(stddev=0.01))(img_stack)
+
+        opt = Adam()
+        self.__action_model = Model(inputs=[pic_input], outputs=output)
+        self.__action_model.compile(optimizer=opt, loss='mean_squared_error')
+        self.__action_model.summary()
+
 
         json_file = open('saved_model.json','r')
         loaded_model_json = json_file.read()
+        loaded_model_json = json.loads(loaded_model_json)['model']
         json_file.close()
-        hello = model_from_json(loaded_model_json)
-        self.__action_model = model_from_json(loaded_model_json)
-        #self.__action_model.compile(optimizer=opt, loss='mean_squared_error')
+        
+        # for loading
+        self.__action_context = tf.get_default_graph()
+        self.__target_model = clone_model(self.__action_model)
 
+        self.__target_context = tf.get_default_graph()
+        self.__model_lock = threading.Lock()
+
+        self.from_packet(loaded_model_json)
         
         # If we are using pretrained weights for the conv layers, load them and verify the first layer.
         if (weights_path is not None and len(weights_path) > 0):
@@ -76,11 +83,12 @@ class RlModel():
 
         # Set up the target model. 
         # This is a trick that will allow the model to converge more rapidly.
-        self.__action_context = tf.get_default_graph()
-        self.__target_model = clone_model(self.__action_model)
+#        self.__action_context = tf.get_default_graph()
+#        self.__target_model = clone_model(self.__action_model)
+#
+#        self.__target_context = tf.get_default_graph()
+#        self.__model_lock = threading.Lock()
 
-        self.__target_context = tf.get_default_graph()
-        self.__model_lock = threading.Lock()
 
     # A helper function to read in the model from a JSON packet.
     # This is used both to read the file from disk and from a network packet

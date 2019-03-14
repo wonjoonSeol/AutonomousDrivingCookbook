@@ -1,19 +1,22 @@
-from airsim_client import *
+import sys
+if ('C:\\Users\\wonjo\\Documents\\git\\AirSim\\PythonClient' not in sys.path):
+    sys.path.insert(0, 'C:\\Users\\wonjo\\Documents\\git\\AirSim\\PythonClient')
+    
+from airsim import CarClient, ImageRequest, CarControls, ImageType
 from rl_model import RlModel
 import time
 import numpy as np
-import threading
+import msgpackrpc
 import json
 import os
-import uuid
-import glob
+import errno
 import datetime
-import h5py
-import sys
 import requests
-import PIL
 import copy
-import datetime
+import math
+from vector3r import Vector3r
+from pose import Pose
+from quaternionr import Quaternionr
 
 # A class that represents the agent that will drive the vehicle, train the model, and send the gradient updates to the trainer.
 class DistributedAgent():
@@ -230,7 +233,7 @@ class DistributedAgent():
         wait_delta_sec = 0.01
 
         print('Getting Pose')
-        self.__car_client.simSetPose(Pose(Vector3r(starting_points[0], starting_points[1], starting_points[2]), AirSimClientBase.toQuaternion(starting_direction[0], starting_direction[1], starting_direction[2])), True)
+        self.__car_client.simSetVehiclePose(Pose(Vector3r(starting_points[0], starting_points[1], starting_points[2]), Quaternionr.toQuaternion(starting_direction[0], starting_direction[1], starting_direction[2])), True)
 
         # Currently, simSetPose does not allow us to set the velocity. 
         # So, if we crash and call simSetPose, the car will be still moving at its previous velocity.
@@ -243,7 +246,7 @@ class DistributedAgent():
         time.sleep(4)
         
         print('Resetting')
-        self.__car_client.simSetPose(Pose(Vector3r(starting_points[0], starting_points[1], starting_points[2]), AirSimClientBase.toQuaternion(starting_direction[0], starting_direction[1], starting_direction[2])), True)
+        self.__car_client.simSetVehiclePose(Pose(Vector3r(starting_points[0], starting_points[1], starting_points[2]), Quaternionr.toQuaternion(starting_direction[0], starting_direction[1], starting_direction[2])), True)
 
         #Start the car rolling so it doesn't get stuck
         print('Running car for a few seconds...')
@@ -253,7 +256,7 @@ class DistributedAgent():
         self.__car_client.setCarControls(self.__car_controls)
         
         # While the car is rolling, start initializing the state buffer
-        stop_run_time =datetime.datetime.now() + datetime.timedelta(seconds=2)
+        stop_run_time = datetime.datetime.now() + datetime.timedelta(seconds=2)
         while(datetime.datetime.now() < stop_run_time):
             time.sleep(wait_delta_sec)
             state_buffer = self.__append_to_ring_buffer(self.__get_image(), state_buffer, state_buffer_len)
@@ -273,7 +276,7 @@ class DistributedAgent():
         
         # Main data collection loop
         while not done:
-            collision_info = self.__car_client.getCollisionInfo()
+            collision_info = self.__car_client.simGetCollisionInfo()
             utc_now = datetime.datetime.utcnow()
             
             # Check for terminal conditions:
@@ -318,7 +321,7 @@ class DistributedAgent():
                 # Observe outcome and compute reward from action
                 state_buffer = self.__append_to_ring_buffer(self.__get_image(), state_buffer, state_buffer_len)
                 car_state = self.__car_client.getCarState()
-                collision_info = self.__car_client.getCollisionInfo()
+                collision_info = self.__car_client.getSimCollisionInfo()
                 reward, far_off = self.__compute_reward(collision_info, car_state)
                 
                 # Add the experience to the set of examples from this iteration
@@ -440,11 +443,11 @@ class DistributedAgent():
                             raise
                 
                 # Added part
-                if (self.__num_batches_run % 100 == 0):
-                    file_name = os.path.join(checkpoint_dir,'{0}.json'.format(self.__num_batches_run)) 
-                    with open(file_name, 'w') as f:
-                        print('Checkpointing to {0}'.format(file_name))
-                        f.write(checkpoint_str)
+    #            if (self.__num_batches_run % 100 == 0):
+                file_name = os.path.join(checkpoint_dir,'{0}.json'.format(self.__num_batches_run)) 
+                with open(file_name, 'w') as f:
+                    print('Checkpointing to {0}'.format(file_name))
+                    f.write(checkpoint_str)
                 
                 self.__last_checkpoint_batch_count = self.__num_batches_run
                 
@@ -456,7 +459,7 @@ class DistributedAgent():
 
     # Gets an image from AirSim
     def __get_image(self):
-        image_response = self.__car_client.simGetImages([ImageRequest(0, AirSimImageType.Scene, False, False)])[0]
+        image_response = self.__car_client.simGetImages([ImageRequest(0, ImageType.Scene, False, False)])[0]
         image1d = np.fromstring(image_response.image_data_uint8, dtype=np.uint8)
         image_rgba = image1d.reshape(image_response.height, image_response.width, 4)
 
@@ -483,7 +486,8 @@ class DistributedAgent():
         x_val_key = bytes('x_val', encoding='utf8')
         y_val_key = bytes('y_val', encoding='utf8')
 
-        car_point = np.array([car_state.kinematics_true[position_key][x_val_key], car_state.kinematics_true[position_key][y_val_key], 0])
+        #car_point = np.array([car_state.kinematics_true[position_key][x_val_key], car_state.kinematics_true[position_key][y_val_key], 0])
+        car_point = np.array([car_state.kinematics_estimated.position.x_val, car_state.kinematics_estimated.position.y_val, 0])
         
         # Distance component is exponential distance to nearest line
         distance = 999
@@ -503,10 +507,12 @@ class DistributedAgent():
         
         return distance_reward, distance > THRESH_DIST
 
+    # To EDIT!!!
     # Initializes the points used for determining the starting point of the vehicle
     def __init_road_points(self):
         self.__road_points = []
-        car_start_coords = [12961.722656, 6660.329102, 0]
+        car_start_coords = [0, 0, 0]
+        # car_start_coords = [12961.722656, 6660.329102, 0]
         with open(os.path.join(os.path.join(self.__data_dir, 'data'), 'road_lines.txt'), 'r') as f:
             for line in f:
                 points = line.split('\t')
@@ -542,6 +548,8 @@ class DistributedAgent():
 
         # Pick a random road.
         random_line_index = np.random.randint(0, high=len(self.__road_points))
+        print("random_line_index")
+        print(self.__road_points[random_line_index])
         
         # Pick a random position on the road. 
         # Do not start too close to either end, as the car may crash during the initial run.
@@ -608,7 +616,7 @@ for arg in sys.argv:
         parameters['local_run'] = True
 
 #Make the debug statements easier to read
-np.set_printoptions(threshold=np.nan, suppress=True)
+np.set_printoptions(threshold=100, suppress=True)
 
 # Check additional parameters needed for local run
 if 'local_run' in parameters:
@@ -636,9 +644,11 @@ print('***')
 # Identify the node as an agent and start AirSim
 if 'local_run' not in parameters:
     os.system('echo 1 >> D:\\agent.agent')
+    # Added no file
+    raise Exception('My error!')
     os.system('START "" powershell.exe D:\\AD_Cookbook_AirSim\\Scripts\\DistributedRL\\restart_airsim_if_agent.ps1')
 else:
-    os.system('START "" powershell.exe {0}'.format(os.path.join(parameters['airsim_path'], 'AD_Cookbook_Start_AirSim.ps1 neighborhood -windowed')))
+    os.system('START "" powershell.exe {0}'.format(os.path.join(parameters['airsim_path'], 'Start_AirSim.ps1 neighborhood -windowed')))
     
 # Start the training
 agent = DistributedAgent(parameters)
